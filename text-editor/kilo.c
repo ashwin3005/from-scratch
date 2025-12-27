@@ -1,21 +1,62 @@
+/*** includes ***/
+
 #include <termios.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <ctype.h>
+#include <stdlib.h>
+#include <errno.h>
+
+/*** data ***/
+
+struct termios orig_termios;
+
+/*** terminal ***/
+
+// for error handling
+void die(const char *s) {
+	perror(s);
+	exit(1);
+}
+
+void disableRawMode() {
+	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios) == -1)
+		die("tcsetattr");
+}
 
 void enableRawMode() {
-    struct termios raw;
+    if(tcgetattr(STDIN_FILENO, &orig_termios) == -1 ) die("tcgetattr");
+	atexit(disableRawMode);
 
-    tcgetattr(STDIN_FILENO, &raw);
+    struct termios raw = orig_termios;
 
-    raw.c_lflag &= ~(ECHO);    // flipping the bit responsible for echo
-
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+	raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP |IXON);
+    raw.c_oflag &= ~(OPOST);
+	raw.c_cflag |= (CS8);
+	raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);    // flipping the bit responsible for echo and 'canonical mode'
+	raw.c_cc[VMIN] = 0;
+	raw.c_cc[VTIME] = 1;
+	
+    if ( tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1 ) die("tcstattr");
 }
+
+/*** init  ***/
 
 int main() {
 
     enableRawMode();
 
-    char c;
-    while (read(STDIN_FILENO, &c, 1) == 1 && c!='q');
+    while (1) {
+		char c = '\0';
+		if(read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) die("read");
+
+		if(iscntrl(c)) {
+			printf("%d\r\n", c);
+		}
+		else {
+			printf("%d ('%c')\r\n", c, c);
+		}
+		if (c == 'q') break;
+	};
     return 0;
 }
